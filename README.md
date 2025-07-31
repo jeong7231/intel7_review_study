@@ -7,4 +7,4 @@
 
 ## 주차별 과제
 
-[1주차](weekly_assignment/1st_week.md)
+[1주차](1st_week/1st_week.md)
