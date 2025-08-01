@@ -14,3 +14,245 @@
     1. 메시지 전송
     2. 파일 전송
     3. ID, Password 생성, 변경, 삭제
+# 과정
+
+### 1. DB 생성
+
+- id와 pw가 저장되어 있는 DB를 생성
+- mariaDB 설치
+    - `sudo apt install mariadb-server mariadb-client -y` ⇒ 설치
+    - `systemctl status mariadb.service` ⇒ mariaDB서버 활성화
+- 실행 ⇒ `sudo mysql` || `sudo mariadb`
+- 아이디, 비밀번호 설정
+    - 생성되어있는 데이터베이스 확인 ⇒ `show databases;`
+    - 데이터베이스 생성 ⇒ `create idpw character set utf8;` ⇒ idpw라는 데이터베이스 생성, 문자 인코딩을 utf8로 설정
+    - idpw 접근 계정 추가 (계정: id, 암호: pw) ⇒ `grant all privileges on idpw.* to id@localhost identified by 'pw';`
+- 설정 후 로그인 ⇒ `mysql -u id -p` 입력 후 비밀번호 입력하라는 표시 나옴 ⇒ 비밀번호(”pw”)입력
+    - 그냥 `sudo mysql`로 로그인해도 됨
+- 데이터베이스 사용 ⇒ `use idpw`
+- 테이블 생성 ⇒ `create table idpasswd (id varchar(20), password varchar(20)) default charset=utf8;`
+    - 테이블 보기 ⇒ `show tables;`
+    - 테이블 구조 보기 ⇒ `explain idpasswd;`
+    - 테이블 삭제 ⇒ `drop table idpw;`
+    - 데이터베이스 삭제 ⇒ `drop database idpw;`
+- 테이블에 요소 추가 ⇒ `insert into idpasswd (id, password) value("KMW_LIN", "PASSWD");`
+    - 갱신 ⇒ `update idpasswd set password="1234" where id="KMW_LIN";`
+    - 삭제 ⇒ `delete from idpasswd where id="KMW_LIN";`
+- 테이블의 모든 요소 보기 ⇒ `select * from idpasswd;`
+    
+    MariaDB [idpw]> select * from idpasswd;
+    +---------+----------+
+    | id      | password |
+    +---------+----------+
+    | 1       | PASSWD   |
+    | 2       | PASSWD   |
+    | 3       | PASSWD   |
+    | 4       | PASSWD   |
+    | 5       | PASSWD   |
+    | 6       | PASSWD   |
+    | 7       | PASSWD   |
+    | 8       | PASSWD   |
+    | 9       | PASSWD   |
+    | 10      | PASSWD   |
+    | KMW_LIN | PASSWD   |
+    | MASTER  | PASSWD   |
+    +---------+----------+
+    
+
+### 2. 서버에 DB 연결
+
+- 기존 서버 ⇒ idpasswd.txt를 파일 포인터를 활용해 fopen해서 읽어옴
+    - 파일이 있어야만 로그인이 가능하다는 점과 새로운 id, pw를 등록하려면 txt파일 자체를 수정해야 한다는 단점이 존재함
+- 변경 ⇒ DB에 저장되어 있는 id, password를 가져옴
+- 위에서 생성한 데이터베이스(idpw)의 테이블(idpasswd)를 읽어오는 쿼리문을 이용함
+    - `SELECT`
+- 변경 후 코드
+    
+    ```c
+    #include <mysql/mysql.h> // db연결을 위한 헤더파일
+    
+    ...
+    
+    typedef struct {
+    		int index;
+    		int fd;
+    		char ip[20];
+    		char id[ID_SIZE];
+    		char pw[ID_SIZE];
+    }CLIENT_INFO; // 클라이언트의 정보를 담아두는 구조체 선언
+    
+    ...
+    
+    int main(int argc, char *argv[])
+    {
+        CLIENT_INFO* client_info; // 구조체 포인터 선언
+        client_info = id_password_read(client_info); 
+        // 클라이언트의 정보를 DB에서 가져오는 함수
+    
+    ...
+    
+    CLIENT_INFO* id_password_read(CLIENT_INFO* client_info)
+    {
+        MYSQL *con = mysql_init(NULL);
+        if (con == NULL) {
+            finish_with_error(con);
+        }
+    
+        char* host = "localhost";
+        char* user = "id";
+        char* pass = "pw";
+        char* dbname = "idpw";
+        if (!mysql_real_connect(con, host, user, pass, dbname, 0, NULL, 0)) { // DB연결
+            finish_with_error(con);
+        }
+    
+        if (mysql_query(con, "SELECT * FROM idpasswd")) {
+            finish_with_error(con);
+        }
+    
+        MYSQL_RES *result = mysql_store_result(con);
+        if (result == NULL) {
+            finish_with_error(con);
+        }
+           
+        int num_fields = mysql_num_fields(result); // 테이블의 열 수 (= 2)
+        int num_rows = mysql_num_rows(result); // 테이블의 행 수
+        
+        countMember = num_rows;
+        client_info = (CLIENT_INFO *)calloc(sizeof(CLIENT_INFO), countMember);
+        if (client_info == NULL) {
+            perror("calloc()");
+            exit(2);
+        }
+    
+        MYSQL_ROW row;
+        int i = 0;
+        while ((row = mysql_fetch_row(result))) {
+            client_info[i].index = 0;
+            client_info[i].fd = -1;
+            strcpy(client_info[i].ip, "");
+            for(int j = 0; j < num_fields; j++){
+                j == 0 ? strcpy(client_info[i].id, row[j]) : strcpy(client_info[i].pw, row[j]);
+            }
+            i++;
+        }
+        
+        mysql_close(con);
+        
+        return client_info;
+    }
+    
+    void finish_with_error(MYSQL *con)
+    {
+        fprintf(stderr, "%s\n", mysql_error(con));
+        mysql_close(con);
+        exit(1);
+    }
+    ```
+    
+- `#include <mysql/mysql.h>`  ⇒ MySQL C API를 사용하기 위한 헤더파일
+    - [MySQL C API 프로그래밍](https://zetcode.com/db/mysqlc/)
+    - [C언어 MySQL 함수들](https://blog.naver.com/dgsw102/221058030471)
+- MYSQL 객체 할당
+    
+    ```c
+     MYSQL *con = mysql_init(NULL);
+    if (con == NULL) {
+        finish_with_error(con);
+    }
+    ```
+    
+    - 객체 할당 실패 시 오류 메시지 출력 및 종료
+        
+        ```c
+        void finish_with_error(MYSQL *con)
+        {
+            fprintf(stderr, "%s\n", mysql_error(con));
+            mysql_close(con);
+            exit(1);
+        }
+        ```
+        
+- 데이터베이스 연결
+    
+    ```c
+    char* host = "localhost";
+    char* user = "id";
+    char* pass = "pw";
+    char* dbname = "idpw";
+    
+    if (!mysql_real_connect(con, host, user, pass, dbname, 0, NULL, 0)) { // DB연결
+        finish_with_error(con);
+    }
+    ```
+    
+    - `mysql_real_connect()` 함수 원형
+        
+        ```c
+        MYSQL *	STDCALL mysql_real_connect(MYSQL *mysql,  //mysql전용변수
+                               const char *host,          //서버 ip
+        					   const char *user,          //유저 이름
+        					   const char *passwd,        //유저 비밀번호
+        					   const char *db,            //처음 사용 db null이면 선택X
+        					   unsigned int port,         //포트 기본 NULL = 3306
+        					   const char *unix_socket,   //소켓. 기본 NULL
+        					   unsigned long clientflag); //사용팔 flag
+        //mysql에 연결하는 함수
+        //성공하면 0을 반환 아니면 나머지를 반환
+        ```
+        
+- 테이블 idpasswd에서 모든 데이터를 검색하는 쿼리
+    
+    ```c
+    if (mysql_query(con, "SELECT * FROM idpasswd")) {
+        finish_with_error(con);
+    }
+    ```
+    
+- SELECT한 결과를 저장할 객체 생성
+    
+    ```c
+    MYSQL_RES *result = mysql_store_result(con);
+    if (result == NULL) {
+        finish_with_error(con);
+    }
+    ```
+    
+- 등록된 테이블의 행, 열의 개수를 저장
+    
+    ```c
+    int num_fields = mysql_num_fields(result); // 테이블의 열 수 (= 2)
+    int num_rows = mysql_num_rows(result); // 테이블의 행 수
+    
+    countMember = num_rows; // 행의 수 = 등록된 멤버의 수
+    ```
+    
+    - `countMember` : 멤버가 추가될 때마다 자동으로 증가 됨, 전역 변수로 선언 되어있음
+- 등록된 멤버의 수 만큼 client_info 동적 할당
+    
+    ```c
+     client_info = (CLIENT_INFO *)calloc(sizeof(CLIENT_INFO), countMember);
+    if (client_info == NULL) {
+        perror("calloc()");
+        exit(2);
+    }
+    ```
+    
+- client_info에 SELECT한 결과를 저장
+    
+    ```c
+    MYSQL_ROW row;
+    int i = 0;
+    while ((row = mysql_fetch_row(result))) {
+        client_info[i].index = 0;
+        client_info[i].fd = -1;
+        strcpy(client_info[i].ip, "");
+        for(int j = 0; j < num_fields; j++){
+            j == 0 ? strcpy(client_info[i].id, row[j]) : strcpy(client_info[i].pw, row[j]);
+        }
+        i++;
+    }
+    ```
+    
+    - `mysql_fetch_row()` : 나온 결과를 한 줄씩 불러와 단어 하나하나로 나눔
+- 쿼리 종료 및 저장된 client_info 리턴
