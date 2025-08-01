@@ -54,7 +54,7 @@ int main(int argc, char *argv[])
 {
     int server_socket, client_socket;
     struct sockaddr_in server_address, client_address;
-    int client_address_size;
+    socklen_t client_address_size;
     int socket_option = 1;
     pthread_t thread_id[MAX_CLIENT] = {0};
     int str_len = 0;
