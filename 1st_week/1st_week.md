@@ -41,21 +41,37 @@
 - 테이블의 모든 요소 보기 ⇒ `select * from idpasswd;`
     
     MariaDB [idpw]> select * from idpasswd;
+  
     +---------+----------+
+  
     | id      | password |
+  
     +---------+----------+
+  
     | 1       | PASSWD   |
+  
     | 2       | PASSWD   |
+  
     | 3       | PASSWD   |
+  
     | 4       | PASSWD   |
+  
     | 5       | PASSWD   |
+  
     | 6       | PASSWD   |
+  
     | 7       | PASSWD   |
+  
     | 8       | PASSWD   |
+  
     | 9       | PASSWD   |
+  
     | 10      | PASSWD   |
+  
     | KMW_LIN | PASSWD   |
+  
     | MASTER  | PASSWD   |
+  
     +---------+----------+
     
 
