@@ -1,11 +1,11 @@
 // 표준 C 헤더
+#include <errno.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
-#include <errno.h>
 // 시스템/OS 헤더
 #include <arpa/inet.h>
 #include <dirent.h>
@@ -137,7 +137,11 @@ int main(int argc, char *argv[])
                     if (client_info[i].fd != -1)
                     {
                         sprintf(msg, "[%s] Already logged!\n", pArray[0]);
-                        write(client_socket, msg, strlen(msg));
+
+                        ssize_t ret = write(client_socket, msg, strlen(msg));
+                        if (ret == -1)
+                            perror("write error");
+
                         log_file(msg);
                         shutdown(client_socket, SHUT_WR);
 
@@ -157,7 +161,10 @@ int main(int argc, char *argv[])
                         pthread_mutex_unlock(&mutex);
                         sprintf(msg, "[%s] New connected! (ip:%s,fd:%d,socket:%d)\n", pArray[0], inet_ntoa(client_address.sin_addr), client_socket, client_count);
                         log_file(msg);
-                        write(client_socket, msg, strlen(msg));
+
+                        ssize_t ret = write(client_socket, msg, strlen(msg));
+                        if (ret == -1)
+                            perror("write error");
 
                         pthread_create(thread_id + i, NULL, client_connection, (void *)(client_info + i));
                         pthread_detach(thread_id[i]);
@@ -168,7 +175,11 @@ int main(int argc, char *argv[])
             if (i == MAX_CLIENT)
             {
                 sprintf(msg, "[%s] Authentication Error!\n", pArray[0]);
-                write(client_socket, msg, strlen(msg));
+
+                ssize_t ret = write(client_socket, msg, strlen(msg));
+                if (ret == -1)
+                    perror("write error");
+
                 log_file(msg);
                 shutdown(client_socket, SHUT_WR);
             }
@@ -238,7 +249,7 @@ void *client_connection(void *arg)
 
     return 0;
 }
-// 여기부터 정리 필요
+
 void send_msg(MSG_INFO *msg_info, CLIENT_INFO *first_client_info)
 {
     int i = 0;
@@ -248,7 +259,11 @@ void send_msg(MSG_INFO *msg_info, CLIENT_INFO *first_client_info)
         for (i = 0; i < MAX_CLIENT; i++)
         {
             if ((first_client_info + i)->fd != -1)
-                write((first_client_info + i)->fd, msg_info->msg, msg_info->len);
+            {
+                ssize_t ret = write((first_client_info + i)->fd, msg_info->msg, msg_info->len);
+                if (ret == -1)
+                    perror("write error");
+            }
         }
     }
     else if (!strcmp(msg_info->to, "IDLIST"))
@@ -266,14 +281,21 @@ void send_msg(MSG_INFO *msg_info, CLIENT_INFO *first_client_info)
             }
         }
         strcat(idlist, "\n");
-        write(msg_info->fd, idlist, strlen(idlist));
+
+        ssize_t ret = write(msg_info->fd, idlist, strlen(idlist));
+        if (ret == -1)
+            perror("write error");
+
         free(idlist);
     }
     else if (!strcmp(msg_info->to, "GETTIME"))
     {
         sleep(1);
         get_localtime(msg_info->msg);
-        write(msg_info->fd, msg_info->msg, strlen(msg_info->msg));
+
+        ssize_t ret = write(msg_info->fd, msg_info->msg, strlen(msg_info->msg));
+        if (ret == -1)
+            perror("write error");
     }
     else
     {
@@ -281,7 +303,10 @@ void send_msg(MSG_INFO *msg_info, CLIENT_INFO *first_client_info)
         {
             if (((first_client_info + i)->fd != -1) && (!strcmp(msg_info->to, (first_client_info + i)->id)))
             {
-                write((first_client_info + i)->fd, msg_info->msg, msg_info->len);
+
+                ssize_t ret = write((first_client_info + i)->fd, msg_info->msg, msg_info->len);
+                if (ret == -1)
+                    perror("write error");
             }
         }
     }
@@ -294,21 +319,18 @@ void error_handling(char *msg)
     exit(1);
 }
 
-void log_file(char *msgstr)
-{
-    fputs(msgstr, stdout);
-}
+void log_file(char *msgstr) { fputs(msgstr, stdout); }
 
 void load_file(const char *filename, CLIENT_INFO *client_info, int max_clients)
 {
     FILE *fp = fopen(filename, "r");
-    if(fp == NULL)
+    if (fp == NULL)
     {
         perror("파일 열기 실패");
         exit(1);
     }
 
-    for(int i=0; i< max_clients; i++)
+    for (int i = 0; i < max_clients; i++)
     {
         client_info[i].index = 0;
         client_info[i].fd = -1;
@@ -318,11 +340,12 @@ void load_file(const char *filename, CLIENT_INFO *client_info, int max_clients)
     }
 
     int index = 0;
-    while(1)
+    while (1)
     {
         int return_fscanf = fscanf(fp, "%s %s", client_info[index].id, client_info[index].pw);
 
-        if(return_fscanf == EOF || index >= MAX_CLIENT) break;
+        if (return_fscanf == EOF || index >= MAX_CLIENT)
+            break;
 
         index++;
     }
@@ -334,7 +357,8 @@ void get_localtime(char *buf)
     time_t tt;
     char wday[7][4] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
     tt = time(NULL);
-    if (errno == EFAULT) perror("time()");
+    if (errno == EFAULT)
+        perror("time()");
     t = localtime(&tt);
     sprintf(buf, "[GETTIME]%02d.%02d.%02d %02d:%02d:%02d %s", t->tm_year + 1900 - 2000, t->tm_mon + 1, t->tm_mday, t->tm_hour, t->tm_min, t->tm_sec, wday[t->tm_wday]);
     return;

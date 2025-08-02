@@ -52,7 +52,11 @@ int main(int argc, char *argv[])
         error_handling("connect() error");
 
     sprintf(msg, "[%s:PASSWD]", name);
-    write(sock, msg, strlen(msg));
+
+    ssize_t ret = write(sock, msg, strlen(msg));
+    if (ret == -1)
+        perror("write error");
+
     pthread_create(&receive_thread, NULL, receive_msg, (void *)&sock);
     pthread_create(&send_thread, NULL, send_msg, (void *)&sock);
 
@@ -67,8 +71,6 @@ int main(int argc, char *argv[])
 void *send_msg(void *arg)
 {
     int *sock = (int *)arg;
-
-    int str_len;
     int ret;
     fd_set initset, newset;
     struct timeval tv;
@@ -90,7 +92,15 @@ void *send_msg(void *arg)
 
         if (FD_ISSET(STDIN_FILENO, &newset))
         {
-            fgets(msg, BUF_SIZE, stdin);
+            char *fgets_return = fgets(msg, BUF_SIZE, stdin);
+            if (fgets_return == NULL)
+            {
+                if (feof(stdin))
+                    exit(0);
+                else if (ferror(stdin))
+                    perror("fgets error");
+            }
+
             if (!strncmp(msg, "quit\n", 5))
             {
                 *sock = -1;
@@ -123,20 +133,17 @@ void *send_msg(void *arg)
 void *receive_msg(void *arg)
 {
     int *sock = (int *)arg;
-    int i;
-    char *pToken;
-    char *pArray[ARR_COUNT] = {0};
 
     char name_msg[NAME_SIZE + BUF_SIZE + 1];
     int str_len;
 
-    while(1)
+    while (1)
     {
         memset(name_msg, 0x0, sizeof(name_msg));
 
         str_len = read(*sock, name_msg, NAME_SIZE + BUF_SIZE);
 
-        if(str_len <= 0)
+        if (str_len <= 0)
         {
             *sock = -1;
             return NULL;
