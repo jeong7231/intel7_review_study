@@ -2,7 +2,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-// #include <signal.h> 이거 왜필요한거지
 
 // 시스템/OS 헤더
 #include <arpa/inet.h>
@@ -39,7 +38,7 @@ int main(int argc, char *argv[])
 
     if (!(argc == 4 || (argc == 6 && strcmp(argv[3], "SIGNUP") == 0)))
     {
-        char buf[200];
+        char buf[100];
         sprintf(buf, "Usage : %s <IP> <port> <ID> OR %s <IP> <port> SIGNUP <ID> <password>\n", argv[0], argv[0]);
         fputs(buf, stderr);
         exit(1);
