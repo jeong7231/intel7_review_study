@@ -16,6 +16,9 @@
 #include <sys/time.h>
 #include <sys/types.h>
 
+// mysql
+#include <mysql/mysql.h>
+
 #define BUF_SIZE 100
 #define MAX_CLIENT 50
 #define ID_SIZE 10
@@ -45,8 +48,11 @@ void *client_connection(void *arg);
 void send_msg(MSG_INFO *msg_info, CLIENT_INFO *first_client_info);
 void error_handling(char *msg);
 void log_file(char *msgstr);
-void load_file(const char *filename, CLIENT_INFO *client_info, int max_clients);
 void get_localtime(char *buf);
+// void load_file(const char *filename, CLIENT_INFO *client_info, int max_clients); // txt 파일에서
+
+void load_idpasswd_db(CLIENT_INFO *client_info, int max_clients); // DB에서 가져오기
+void sql_error(MYSQL *con);
 
 int client_count = 0;
 pthread_mutex_t mutex;
@@ -65,9 +71,16 @@ int main(int argc, char *argv[])
     char *pArray[ARRAY_COUNT] = {0};
     char msg[BUF_SIZE];
 
+#if 0
     // idpasswd.txt 파일에서 로그인 정보 받아오기
     CLIENT_INFO client_info[MAX_CLIENT];
     load_file("idpasswd.txt", client_info, MAX_CLIENT);
+#endif
+
+#if 1
+    CLIENT_INFO client_info[MAX_CLIENT];
+    load_idpasswd_db(client_info, MAX_CLIENT);
+#endif
 
     if (argc != 2)
     {
@@ -321,6 +334,20 @@ void error_handling(char *msg)
 
 void log_file(char *msgstr) { fputs(msgstr, stdout); }
 
+void get_localtime(char *buf)
+{
+    struct tm *t;
+    time_t tt;
+    char wday[7][4] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
+    tt = time(NULL);
+    if (errno == EFAULT)
+        perror("time()");
+    t = localtime(&tt);
+    sprintf(buf, "[GETTIME]%02d.%02d.%02d %02d:%02d:%02d %s", t->tm_year + 1900 - 2000, t->tm_mon + 1, t->tm_mday, t->tm_hour, t->tm_min, t->tm_sec, wday[t->tm_wday]);
+    return;
+}
+
+#if 0
 void load_file(const char *filename, CLIENT_INFO *client_info, int max_clients)
 {
     FILE *fp = fopen(filename, "r");
@@ -350,16 +377,72 @@ void load_file(const char *filename, CLIENT_INFO *client_info, int max_clients)
         index++;
     }
 }
+#endif
 
-void get_localtime(char *buf)
+#if 1
+void load_idpasswd_db(CLIENT_INFO *client_info, int max_clients)
 {
-    struct tm *t;
-    time_t tt;
-    char wday[7][4] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
-    tt = time(NULL);
-    if (errno == EFAULT)
-        perror("time()");
-    t = localtime(&tt);
-    sprintf(buf, "[GETTIME]%02d.%02d.%02d %02d:%02d:%02d %s", t->tm_year + 1900 - 2000, t->tm_mon + 1, t->tm_mday, t->tm_hour, t->tm_min, t->tm_sec, wday[t->tm_wday]);
-    return;
+    for (int i = 0; i < max_clients; i++)
+    {
+        client_info[i].index = 0;
+        client_info[i].fd = -1;
+        strcpy(client_info[i].ip, "");
+        strcpy(client_info[i].id, "");
+        strcpy(client_info[i].pw, "");
+    }
+    MYSQL *conn = mysql_init(NULL);
+
+    if (conn == NULL)
+    {
+        fputs("mysql_init() failed\n", stderr);
+        exit(1);
+    }
+
+    if (mysql_real_connect(conn, "127.0.0.1", "ubuntu", "mariadb", "account", 0, NULL, 0) == NULL)
+    {
+        sql_error(conn);
+    }
+
+    if (mysql_query(conn, "SELECT id, password FROM idpasswd"))
+    {
+        sql_error(conn);
+    }
+
+    MYSQL_RES *result = mysql_store_result(conn);
+    if (result == NULL)
+    {
+        sql_error(conn);
+    }
+
+    mysql_num_rows(result);
+    int i = 0;
+
+    MYSQL_ROW row;
+    while ((row = mysql_fetch_row(result)) && i < max_clients)
+    {
+        client_info[i].index = i;
+        if (row[0])
+        {
+            strncpy(client_info[i].id, row[0], ID_SIZE - 1);
+            client_info[i].id[ID_SIZE - 1] = '\0';
+        }
+        if (row[1])
+        {
+            strncpy(client_info[i].pw, row[1], ID_SIZE - 1);
+            client_info[i].pw[ID_SIZE - 1] = '\0';
+        }
+        i++;
+    }
+
+    mysql_free_result(result);
+    mysql_close(conn);
 }
+
+void sql_error(MYSQL *conn)
+{
+    fputs(mysql_error(conn), stderr);
+    fputs("\n", stderr);
+    mysql_close(conn);
+    exit(1);
+}
+#endif

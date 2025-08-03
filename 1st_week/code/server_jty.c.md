@@ -1,4 +1,5 @@
-# 메인 함수
+# 기존 코드 분석
+## 메인 함수
 
 ```c
 pthread_mutex_init(&mutex, NULL)
@@ -219,9 +220,9 @@ for(i=0; i < MAX_CLIENT; i++)
 
 <br>
 
-# 함수 구현
+## 함수 구현
 
-## `client_connection`
+### `client_connection`
 
 - 클라이언트 별 스레드 함수
 - 각 클라이언트가 서버에 접속할 때 마다 생성되는 스레드의 메인 루틴
@@ -379,7 +380,7 @@ pthread_mutex_unlock(&mutex);
 
 <br>
 
-## `send_msg`
+### `send_msg`
 ```c
 void send_msg(MSG_INFO *msg_info, CLIENT_INFO *first_client_info)
 {
@@ -557,7 +558,7 @@ else
 
 <br>
 
-## `load_file`
+### `load_file`
 
 ```c
 void load_file(const char *filename, CLIENT_INFO *client_info, int max_clients)
@@ -634,7 +635,7 @@ while(1)
 
 <br>
 
-## `get_localtime`
+### `get_localtime`
 
 ```c
 void get_localtime(char *buf)
@@ -651,3 +652,143 @@ void get_localtime(char *buf)
 ```
 
 - 시스템 현재 시각을 읽고, 포맷팅하여 문자열 버퍼에저장, 클라이언트에 시간 정보 전송
+
+<br>
+
+# mariaDB(mySQL)
+`idpasswd.txt`에서 데이터를 꺼내는것에서 DB에서 꺼내오는걸로
+
+[mysql 함수](https://blog.naver.com/dgsw102/221058030471)
+
+## mariaDB 설치
+
+```bash
+sudo apt install mariadb-server mariadb-client
+```
+
+라이브러리 설치
+```bash
+sudo apt-get install libmysqlclient-dev
+```
+
+컴파일 시 include 경로 지정
+```bash
+gcc -o myprog myprog.c -I/usr/include/mysql -lmysqlclient
+```
+
+mariadb 비밀번호 설정
+```sql
+SET PASSWORD FOR 'root'@'localhost' = PASSWORD('새비밀번호');
+FLUSH PRIVILEGES;
+```
+
+사용자 목록 확인
+```sql
+SELECT user, host FROM mysql.user;
+```
+사용자 없으면 서버 접속 불가
+
+사용자 생성
+```sql
+CREATE USER 'username'@'host' IDENTIFIED BY 'password(난 mariadb로 설정해둠)';
+GRANT ALL PRIVILEGES ON dbname.* TO 'username(난 ubuntu로 해둠)'@'host';
+FLUSH PRIVILEGES;
+```
+```c
+if (mysql_real_connect(conn, "127.0.0.1", "ubuntu", "mariadb", "account", 0, NULL, 0) == NULL)
+{
+    sql_error(conn);
+}
+```
+## `load_idpasswd_db`
+
+```c
+void load_idpasswd_db(CLIENT_INFO *client_info, int max_clients)
+{
+    for (int i = 0; i < max_clients; i++)
+    {
+        client_info[i].index = 0;
+        client_info[i].fd = -1;
+        strcpy(client_info[i].ip, "");
+        strcpy(client_info[i].id, "");
+        strcpy(client_info[i].pw, "");
+    }
+    MYSQL *conn = mysql_init(NULL);
+
+    if (conn == NULL)
+    {
+        fputs("mysql_init() failed\n", stderr);
+        exit(1);
+    }
+
+    if (mysql_real_connect(conn, "127.0.0.1", "ubuntu", "mariadb", "account", 0, NULL, 0) == NULL)
+    {
+        sql_error(conn);
+    }
+
+    if (mysql_query(conn, "SELECT id, password FROM idpasswd"))
+    {
+        sql_error(conn);
+    }
+
+    MYSQL_RES *result = mysql_store_result(conn);
+    if (result == NULL)
+    {
+        sql_error(conn);
+    }
+
+    mysql_num_rows(result);
+    int i = 0;
+
+    MYSQL_ROW row;
+    while ((row = mysql_fetch_row(result)) && i < max_clients)
+    {
+        client_info[i].index = i;
+        if (row[0])
+        {
+            strncpy(client_info[i].id, row[0], ID_SIZE - 1);
+            client_info[i].id[ID_SIZE - 1] = '\0';
+        }
+        if (row[1])
+        {
+            strncpy(client_info[i].pw, row[1], ID_SIZE - 1);
+            client_info[i].pw[ID_SIZE - 1] = '\0';
+        }
+        i++;
+    }
+
+    mysql_free_result(result);
+    mysql_close(conn);
+}
+
+void sql_error(MYSQL *conn)
+{
+    fputs(mysql_error(conn), stderr);
+    fputs("\n", stderr);
+    mysql_close(conn);
+    exit(1);
+}
+```
+<br>
+
+- `client_info[]`를 한 번 초기화하고(fd=-1, 문자열 비움), 이후 MySQL 서버에 접속한다.
+- `SELECT id, password FROM idpasswd` 실행 후 결과 집합을 fetch 하면서 최대 `MAX_CLIENT` 개 행을 `client_info[]`에 채운다.
+- 완료되면 결과·커넥션을 해제한다. 실패 시 `sql_error()`가 에러 메시지를 출력하고 프로세스를 종료한다.
+
+
+
+```c
+for (int i = 0; i < max_clients; i++)
+{
+    client_info[i].index = 0;
+    client_info[i].fd = -1;
+    strcpy(client_info[i].ip, "");
+    strcpy(client_info[i].id, "");
+    strcpy(client_info[i].pw, "");
+}
+```
+
+>`CLIENT_INFO.client_info` 초기화 로직 빠지면, `load_idpasswd_db()`에서 가져온 DB 데이터 외의 나머지 슬롯(fd 등)이 쓰레기 값(garbage value)으로 남아있음
+>- `fd`가 -1이 아닌 쓰레기 값으로 남음
+>- `send_msg()`에서 `(first_client_info + i)->fd != -1` 조건이 잘못 참이 됨
+>- 실제 연결되지 않은 `fd`로 `write()` 호출 → EBADF (Bad file descriptor) 발생
