@@ -787,7 +787,8 @@ for (int i = 0; i < max_clients; i++)
     strcpy(client_info[i].pw, "");
 }
 ```
-
+>**EBADF(Bad file descriptor) 방지**
+>
 >`CLIENT_INFO.client_info` 초기화 로직 빠지면, `load_idpasswd_db()`에서 가져온 DB 데이터 외의 나머지 슬롯(fd 등)이 쓰레기 값(garbage value)으로 남아있음
 >- `fd`가 -1이 아닌 쓰레기 값으로 남음
 >- `send_msg()`에서 `(first_client_info + i)->fd != -1` 조건이 잘못 참이 됨
