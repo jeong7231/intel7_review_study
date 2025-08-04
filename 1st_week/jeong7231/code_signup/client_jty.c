@@ -81,8 +81,8 @@ int main(int argc, char *argv[])
         }
         // 성공시 로그인
         strcpy(name, argv[4]);
-        sprintf(msg, "[%s:%s]", name, argv[5]);
-        write(sock, msg, strlen(msg));
+        // sprintf(msg, "[%s:%s]", name, argv[5]);
+        // write(sock, msg, strlen(msg));
     }
     else if (argc == 4)
     {

@@ -20,7 +20,7 @@
 #include <mysql/mysql.h>
 
 #define BUF_SIZE 1000
-#define MAX_CLIENT 1
+#define MAX_CLIENT 50
 #define ID_SIZE 10
 #define ARRAY_COUNT 5
 
