@@ -132,8 +132,20 @@ int main(int argc, char *argv[])
         if (strncmp(idpasswd, "[SIGNUP:", 8) == 0)
         {
             // 파싱
-            char signup_id[ID_SIZE] = {0}, signup_pw[ID_SIZE] = {0};
-            sscanf(idpasswd, "[SIGNUP:%9[^:]:%9[^]]]", signup_id, signup_pw);
+            char *pToken;
+            char *pArray[ARRAY_COUNT] = {0};
+            int i = 0;
+
+            // 파싱 (구분자 : 와 ])
+            pToken = strtok(idpasswd, "[:]");
+            while (pToken != NULL && i < ARRAY_COUNT)
+            {
+                pArray[i++] = pToken;
+                pToken = strtok(NULL, "[:]");
+            }
+            // pArray[1] = ID, pArray[2] = PASSWD
+            char *signup_id = pArray[1];
+            char *signup_pw = pArray[2];
 
             // DB 연결 및 중복 체크
             MYSQL *conn = mysql_init(NULL);
