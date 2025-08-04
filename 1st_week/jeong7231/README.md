@@ -6,8 +6,3 @@
 [TCP](note/TCP.md)
 
 [pthread](note/pthread.md)
-
-
-[signup 기능 구현(서버)](note/server_signup.md)
-
-[signup 기능 구현(클라이언트)](note/client_signup.md)
