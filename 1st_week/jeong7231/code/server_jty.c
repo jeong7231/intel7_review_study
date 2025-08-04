@@ -19,7 +19,7 @@
 // mysql
 #include <mysql/mysql.h>
 
-#define BUF_SIZE 100
+#define BUF_SIZE 1000
 #define MAX_CLIENT 50
 #define ID_SIZE 10
 #define ARRAY_COUNT 5
@@ -28,11 +28,11 @@
 
 typedef struct
 {
-    char fd;
-    char *from;
-    char *to;
-    char *msg;
-    char len;
+    int fd; // char → int
+    char from[ID_SIZE];
+    char to[ID_SIZE];
+    char msg[BUF_SIZE];
+    int len; // char → int
 } MSG_INFO;
 
 typedef struct
@@ -66,32 +66,24 @@ int main(int argc, char *argv[])
     pthread_t thread_id[MAX_CLIENT] = {0};
     int str_len = 0;
     int i;
-    char idpasswd[(ID_SIZE * 2) + 3];
+    char idpasswd[(ID_SIZE * 2) + 100];
     char *pToken;
     char *pArray[ARRAY_COUNT] = {0};
     char msg[BUF_SIZE];
 
-#if 0
-    // idpasswd.txt 파일에서 로그인 정보 받아오기
-    CLIENT_INFO client_info[MAX_CLIENT];
-    load_file("idpasswd.txt", client_info, MAX_CLIENT);
-#endif
-
-#if 1
     CLIENT_INFO client_info[MAX_CLIENT];
     load_idpasswd_db(client_info, MAX_CLIENT);
-#endif
 
     if (argc != 2)
     {
         char buf[100];
         sprintf(buf, "Usage : %s <port>\n", argv[0]);
         fputs(buf, stderr);
+        exit(1);
     }
 
     fputs("Server Start!!\n", stdout);
 
-    // pthread_mutex_init 은 성공시 0 반환 실패시 0이 아닌 값 반환
     if (pthread_mutex_init(&mutex, NULL))
         error_handling("mutex init error");
 
@@ -127,78 +119,185 @@ int main(int argc, char *argv[])
             continue;
         }
 
-        str_len = read(client_socket, idpasswd, sizeof(idpasswd));
+        str_len = read(client_socket, idpasswd, sizeof(idpasswd) - 1);
+        if (str_len <= 0)
+        {
+            shutdown(client_socket, SHUT_WR);
+            close(client_socket);
+            continue;
+        }
         idpasswd[str_len] = '\0';
 
-        if (str_len > 0)
+        ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+        if (strncmp(idpasswd, "[SIGNUP:", 8) == 0)
         {
-            i = 0;
-            pToken = strtok(idpasswd, "[:]");
+            // 파싱
+            char *pToken;
+            char *pArray[ARRAY_COUNT] = {0};
+            int i = 0;
 
-            while (pToken != NULL)
+            // 파싱 (구분자 : 와 ])
+            pToken = strtok(idpasswd, "[:]");
+            while (pToken != NULL && i < ARRAY_COUNT)
             {
-                pArray[i] = pToken;
-                if (i++ >= ARRAY_COUNT)
-                    break;
+                pArray[i++] = pToken;
                 pToken = strtok(NULL, "[:]");
             }
+            // pArray[1] = ID, pArray[2] = PASSWD
+            char *signup_id = pArray[1];
+            char *signup_pw = pArray[2];
 
+            // DB 연결 및 중복 체크
+            MYSQL *conn = mysql_init(NULL);
+            if (conn == NULL)
+                error_handling("mysql_init() failed");
+
+            if (mysql_real_connect(conn, "127.0.0.1", "ubuntu", "mariadb", "account", 0, NULL, 0) == NULL)
+                sql_error(conn);
+
+            char query[256];
+            snprintf(query, sizeof(query), "SELECT id FROM idpasswd WHERE id='%s'", signup_id);
+            if (mysql_query(conn, query))
+                sql_error(conn);
+
+            MYSQL_RES *result = mysql_store_result(conn);
+            if (result == NULL)
+                sql_error(conn);
+
+            // 이미 존재하면 실패 메시지 송신
+            if (mysql_num_rows(result) > 0)
+            {
+                char fail_msg[] = "SIGNUP failed (ID already exists)\n";
+                write(client_socket, fail_msg, strlen(fail_msg));
+                shutdown(client_socket, SHUT_WR);
+                mysql_free_result(result);
+                mysql_close(conn);
+                close(client_socket);
+                continue;
+            }
+            mysql_free_result(result);
+
+            // 신규 가입 DB 등록
+            snprintf(query, sizeof(query), "INSERT INTO idpasswd(id, password) VALUES('%s','%s')", signup_id, signup_pw);
+            if (mysql_query(conn, query))
+                sql_error(conn);
+            mysql_close(conn);
+
+            // 클라이언트 정보 할당
+            pthread_mutex_lock(&mutex);
+
+            int idx = -1;
             for (i = 0; i < MAX_CLIENT; i++)
             {
-                if (!strcmp(client_info[i].id, pArray[0]))
+                if (client_info[i].fd == -1)
                 {
-                    if (client_info[i].fd != -1)
-                    {
-                        sprintf(msg, "[%s] Already logged!\n", pArray[0]);
-
-                        ssize_t ret = write(client_socket, msg, strlen(msg));
-                        if (ret == -1)
-                            perror("write error");
-
-                        log_file(msg);
-                        shutdown(client_socket, SHUT_WR);
-
-                        client_info[i].fd = -1; // mcu에서 fd 처리
-
-                        break;
-                    }
-
-                    if (!strcmp(client_info[i].pw, pArray[1]))
-                    {
-                        strcpy(client_info[i].ip, inet_ntoa(client_address.sin_addr));
-                        pthread_mutex_lock(&mutex);
-                        client_info[i].index = i;
-                        client_info[i].fd = client_socket;
-                        client_count++;
-
-                        pthread_mutex_unlock(&mutex);
-                        sprintf(msg, "[%s] New connected! (ip:%s,fd:%d,socket:%d)\n", pArray[0], inet_ntoa(client_address.sin_addr), client_socket, client_count);
-                        log_file(msg);
-
-                        ssize_t ret = write(client_socket, msg, strlen(msg));
-                        if (ret == -1)
-                            perror("write error");
-
-                        pthread_create(thread_id + i, NULL, client_connection, (void *)(client_info + i));
-                        pthread_detach(thread_id[i]);
-                        break;
-                    }
+                    idx = i;
+                    break;
                 }
             }
-            if (i == MAX_CLIENT)
+
+            if (idx == -1)
             {
-                sprintf(msg, "[%s] Authentication Error!\n", pArray[0]);
-
-                ssize_t ret = write(client_socket, msg, strlen(msg));
-                if (ret == -1)
-                    perror("write error");
-
-                log_file(msg);
+                char fail_msg[] = "No slot for new client\n";
+                write(client_socket, fail_msg, strlen(fail_msg));
                 shutdown(client_socket, SHUT_WR);
+                close(client_socket);
+                pthread_mutex_unlock(&mutex);
+                continue;
+            }
+
+            client_info[idx].fd = client_socket;
+            client_info[idx].index = idx;
+
+            strncpy(client_info[idx].ip, inet_ntoa(client_address.sin_addr), sizeof(client_info[idx].ip) - 1);
+            client_info[idx].ip[sizeof(client_info[idx].ip) - 1] = '\0';
+
+            strncpy(client_info[idx].id, signup_id, ID_SIZE - 1);
+            client_info[idx].id[ID_SIZE - 1] = '\0';
+
+            strncpy(client_info[idx].pw, signup_pw, ID_SIZE - 1);
+            client_info[idx].pw[ID_SIZE - 1] = '\0';
+
+            client_count++;
+            pthread_mutex_unlock(&mutex);
+
+            // 가입 성공 메시지 전송 및 스레드 생성
+            snprintf(msg, sizeof(msg), "SIGNUP success. [%s] login OK\n", signup_id);
+            write(client_socket, msg, strlen(msg));
+            log_file(msg);
+
+            pthread_create(thread_id + idx, NULL, client_connection, (void *)(client_info + idx));
+            pthread_detach(thread_id[idx]);
+            continue;
+        }
+
+        ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+        i = 0;
+        pToken = strtok(idpasswd, "[:]");
+
+        while (pToken != NULL)
+        {
+            pArray[i] = pToken;
+            if (i++ >= ARRAY_COUNT)
+                break;
+            pToken = strtok(NULL, "[:]");
+        }
+
+        for (i = 0; i < MAX_CLIENT; i++)
+        {
+            if (!strcmp(client_info[i].id, pArray[0]))
+            {
+                if (client_info[i].fd != -1)
+                {
+                    snprintf(msg, sizeof(msg), "[%s] Already logged!\n", pArray[0]);
+
+                    ssize_t ret = write(client_socket, msg, strlen(msg));
+                    if (ret == -1)
+                        perror("write error");
+
+                    log_file(msg);
+                    shutdown(client_socket, SHUT_WR);
+
+                    client_info[i].fd = -1; // mcu에서 fd 처리
+
+                    break;
+                }
+
+                if (!strcmp(client_info[i].pw, pArray[1]))
+                {
+                    strncpy(client_info[i].ip, inet_ntoa(client_address.sin_addr), sizeof(client_info[i].ip) - 1);
+                    client_info[i].ip[sizeof(client_info[i].ip) - 1] = '\0';
+
+                    pthread_mutex_lock(&mutex);
+                    client_info[i].index = i;
+                    client_info[i].fd = client_socket;
+                    client_count++;
+                    pthread_mutex_unlock(&mutex);
+
+                    snprintf(msg, sizeof(msg), "[%s] New connected! (ip:%s,fd:%d,socket:%d)\n", pArray[0], client_info[i].ip, client_socket, client_count);
+                    log_file(msg);
+
+                    ssize_t ret = write(client_socket, msg, strlen(msg));
+                    if (ret == -1)
+                        perror("write error");
+
+                    pthread_create(thread_id + i, NULL, client_connection, (void *)(client_info + i));
+                    pthread_detach(thread_id[i]);
+                    break;
+                }
             }
         }
-        else
+        if (i == MAX_CLIENT)
+        {
+            snprintf(msg, sizeof(msg), "[%s] Authentication Error!\n", pArray[0]);
+
+            ssize_t ret = write(client_socket, msg, strlen(msg));
+            if (ret == -1)
+                perror("write error");
+
+            log_file(msg);
             shutdown(client_socket, SHUT_WR);
+        }
     }
     return 0;
 }
@@ -209,7 +308,7 @@ void *client_connection(void *arg)
     int str_len = 0;
     int index = client_info->index;
     char msg[BUF_SIZE];
-    char to_msg[MAX_CLIENT * ID_SIZE + 1];
+    char to_msg[BUF_SIZE];
     int i = 0;
     char *pToken;
     char *pArray[ARRAY_COUNT] = {0};
@@ -238,21 +337,38 @@ void *client_connection(void *arg)
             pToken = strtok(NULL, "[:]");
         }
 
+        memset(&msg_info, 0, sizeof(MSG_INFO));
         msg_info.fd = client_info->fd;
-        msg_info.from = client_info->id;
-        msg_info.to = pArray[0];
-        sprintf(to_msg, "[%s]%s", msg_info.from, pArray[1]);
-
-        msg_info.msg = to_msg;
-        msg_info.len = strlen(to_msg);
-        sprintf(str_buf, "msg : [%s->%s] %s", msg_info.from, msg_info.to, pArray[1]);
+        strncpy(msg_info.from, client_info->id, ID_SIZE - 1);
+        msg_info.from[ID_SIZE - 1] = '\0';
+        if (pArray[0])
+        {
+            strncpy(msg_info.to, pArray[0], ID_SIZE - 1);
+            msg_info.to[ID_SIZE - 1] = '\0';
+        }
+        else
+        {
+            msg_info.to[0] = '\0';
+        }
+        if (pArray[1])
+        {
+            snprintf(to_msg, sizeof(to_msg), "[%s]%s", msg_info.from, pArray[1]);
+            strncpy(msg_info.msg, to_msg, BUF_SIZE - 1);
+            msg_info.msg[BUF_SIZE - 1] = '\0';
+        }
+        else
+        {
+            msg_info.msg[0] = '\0';
+        }
+        msg_info.len = strlen(msg_info.msg);
+        snprintf(str_buf, sizeof(str_buf), "msg : [%s->%s] %s", msg_info.from, msg_info.to, pArray[1] ? pArray[1] : "");
         log_file(str_buf);
         send_msg(&msg_info, first_client_info);
     }
 
     close(client_info->fd);
 
-    sprintf(str_buf, "Disconnect ID:%s (ip:%s,fd:%d,sockcnt:%d)\n", client_info->id, client_info->ip, client_info->fd, client_count - 1);
+    snprintf(str_buf, sizeof(str_buf), "Disconnect ID:%s (ip:%s,fd:%d,sockcnt:%d)\n", client_info->id, client_info->ip, client_info->fd, client_count - 1);
     log_file(str_buf);
 
     pthread_mutex_lock(&mutex);
@@ -316,7 +432,6 @@ void send_msg(MSG_INFO *msg_info, CLIENT_INFO *first_client_info)
         {
             if (((first_client_info + i)->fd != -1) && (!strcmp(msg_info->to, (first_client_info + i)->id)))
             {
-
                 ssize_t ret = write((first_client_info + i)->fd, msg_info->msg, msg_info->len);
                 if (ret == -1)
                     perror("write error");
@@ -347,39 +462,6 @@ void get_localtime(char *buf)
     return;
 }
 
-#if 0
-void load_file(const char *filename, CLIENT_INFO *client_info, int max_clients)
-{
-    FILE *fp = fopen(filename, "r");
-    if (fp == NULL)
-    {
-        perror("파일 열기 실패");
-        exit(1);
-    }
-
-    for (int i = 0; i < max_clients; i++)
-    {
-        client_info[i].index = 0;
-        client_info[i].fd = -1;
-        strcpy(client_info[i].ip, "");
-        strcpy(client_info[i].id, "");
-        strcpy(client_info[i].pw, "");
-    }
-
-    int index = 0;
-    while (1)
-    {
-        int return_fscanf = fscanf(fp, "%s %s", client_info[index].id, client_info[index].pw);
-
-        if (return_fscanf == EOF || index >= MAX_CLIENT)
-            break;
-
-        index++;
-    }
-}
-#endif
-
-#if 1
 void load_idpasswd_db(CLIENT_INFO *client_info, int max_clients)
 {
     for (int i = 0; i < max_clients; i++)
@@ -414,9 +496,7 @@ void load_idpasswd_db(CLIENT_INFO *client_info, int max_clients)
         sql_error(conn);
     }
 
-    mysql_num_rows(result);
     int i = 0;
-
     MYSQL_ROW row;
     while ((row = mysql_fetch_row(result)) && i < max_clients)
     {
@@ -445,4 +525,3 @@ void sql_error(MYSQL *conn)
     mysql_close(conn);
     exit(1);
 }
-#endif

@@ -2,7 +2,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-// #include <signal.h> 이거 왜필요한거지
 
 // 시스템/OS 헤더
 #include <arpa/inet.h>
@@ -30,11 +29,19 @@ int main(int argc, char *argv[])
     pthread_t send_thread, receive_thread;
     void *thread_return;
 
-    if (argc != 4)
+    // if (argc != 4)
+    // {
+    //     char buf[100];
+    //     sprintf(buf, "Usage : %s <IP> <port> <name>\n", argv[0]);
+    //     fputs(buf, stderr);
+    // }
+
+    if (!(argc == 4 || (argc == 6 && strcmp(argv[3], "SIGNUP") == 0)))
     {
         char buf[100];
-        sprintf(buf, "Usage : %s <IP> <port> <name>\n", argv[0]);
+        sprintf(buf, "Usage : %s <IP> <port> <ID> OR %s <IP> <port> SIGNUP <ID> <password>\n", argv[0], argv[0]);
         fputs(buf, stderr);
+        exit(1);
     }
 
     sprintf(name, "%s", argv[3]);
@@ -51,12 +58,42 @@ int main(int argc, char *argv[])
     if (connect(sock, (struct sockaddr *)&server_address, sizeof(server_address)) == -1)
         error_handling("connect() error");
 
-    sprintf(msg, "[%s:PASSWD]", name);
+    // sprintf(msg, "[%s:PASSWD]", name);
 
-    ssize_t ret = write(sock, msg, strlen(msg));
-    if (ret == -1)
-        perror("write error");
+    // ssize_t ret = write(sock, msg, strlen(msg));
+    // if (ret == -1)
+    //     perror("write error");
 
+    /////////////////////////////////////////////////////////////////////////////////
+
+    if (argc == 6 && strcmp(argv[3], "SIGNUP") == 0)
+    {
+        sprintf(msg, "[SIGNUP:%s:%s]", argv[4], argv[5]);
+        write(sock, msg, strlen(msg));
+
+        int recv_len = read(sock, msg, BUF_SIZE - 1);
+        msg[recv_len] = 0;
+        if (strstr(msg, "SIGNUP failed") != NULL)
+        {
+            fputs(msg, stdout);
+            close(sock);
+            exit(1);
+        }
+        // 성공시 로그인
+        strcpy(name, argv[4]);
+        // sprintf(msg, "[%s:%s]", name, argv[5]);
+        // write(sock, msg, strlen(msg));
+    }
+    else if (argc == 4)
+    {
+        strcpy(name, argv[3]);
+        sprintf(msg, "[%s:PASSWD]", name);
+        ssize_t ret = write(sock, msg, strlen(msg));
+        if (ret == -1)
+            perror("write error");
+    }
+
+    /////////////////////////////////////////////////////////////////////////////////
     pthread_create(&receive_thread, NULL, receive_msg, (void *)&sock);
     pthread_create(&send_thread, NULL, send_msg, (void *)&sock);
 
