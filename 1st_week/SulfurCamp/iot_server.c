@@ -1,5 +1,5 @@
 /* 서울기술교육센터 AIoT */
-/* author : KSH */
+/* author : HJY */
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -9,319 +9,317 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <pthread.h>
-#include <sys/stat.h>
-#include <fcntl.h>
-#include <dirent.h>
-#include <sys/time.h>
-#include <time.h>
+#include <mysql/mysql.h>
 #include <errno.h>
 
 #define BUF_SIZE 100
 #define MAX_CLNT 32
-#define ID_SIZE 10
+#define ID_SIZE 20
 #define ARR_CNT 5
 
-#define DEBUG
 typedef struct {
-		char fd;
-		char *from;
-		char *to;
-		char *msg;
-		int len;
-}MSG_INFO;
+    int fd;
+    char ip[20];
+    char id[ID_SIZE];
+} CLIENT_INFO;
 
 typedef struct {
-		int index;
-		int fd;
-		char ip[20];
-		char id[ID_SIZE];
-		char pw[ID_SIZE];
-}CLIENT_INFO;
+    int fd;
+    char *from;
+    char *to;
+    char *msg;
+    int len;
+} MSG_INFO;
 
 void * clnt_connection(void * arg);
-void send_msg(MSG_INFO * msg_info, CLIENT_INFO * first_client_info);
+void send_msg(MSG_INFO * msg_info);
 void error_handling(char * msg);
 void log_file(char * msgstr);
 
-int clnt_cnt=0;
+int clnt_cnt = 0;
 pthread_mutex_t mutx;
+CLIENT_INFO client_info[MAX_CLNT];
+MYSQL *conn;
 
-int main(int argc, char *argv[])
-{
-		FILE* fp;
-		char* path = "idpasswd.txt";
-		char tmp;
-		int count = 0;
-		fp = fopen(path, "r");
-		if (fp == NULL) {
-			perror("fopen()");
-			exit(1);
-		}
-		while(fscanf(fp, "%c", &tmp) != EOF){
-			if (tmp == ' '){
-				count++;
-			}
-		}
-		//printf("%d\n", count);
-		fseek(fp, 0, SEEK_SET);
-		
-		int serv_sock, clnt_sock;
-		struct sockaddr_in serv_adr, clnt_adr;
-		int clnt_adr_sz;
-		int sock_option  = 1;
-		pthread_t t_id[MAX_CLNT] = {0};
-		int str_len = 0;
-		int i;
-		char idpasswd[(ID_SIZE*2)+3];
-		char *pToken;
-		char *pArray[ARR_CNT]={0};
-		char msg[BUF_SIZE];
-
-		/*CLIENT_INFO client_info[MAX_CLNT] = {{0,-1,"","1","PASSWD"}, \
-				{0,-1,"","2","PASSWD"},  {0,-1,"","3","PASSWD"}, \
-				{0,-1,"","4","PASSWD"},  {0,-1,"","5","PASSWD"}, \
-				{0,-1,"","6","PASSWD"},  {0,-1,"","7","PASSWD"}, \
-				{0,-1,"","8","PASSWD"},  {0,-1,"","9","PASSWD"}, \
-				{0,-1,"","10","PASSWD"},  {0,-1,"","11","PASSWD"}, \
-				{0,-1,"","12","PASSWD"},  {0,-1,"","13","PASSWD"}, \
-				{0,-1,"","14","PASSWD"},  {0,-1,"","15","PASSWD"}, \
-				{0,-1,"","16","PASSWD"},  {0,-1,"","17","PASSWD"}, \
-				{0,-1,"","18","PASSWD"},  {0,-1,"","19","PASSWD"}, \
-				{0,-1,"","20","PASSWD"},  {0,-1,"","21","PASSWD"}, \
-				{0,-1,"","22","PASSWD"},  {0,-1,"","23","PASSWD"}, \
-				{0,-1,"","24","PASSWD"},  {0,-1,"","25","PASSWD"}, \
-				{0,-1,"","26","PASSWD"},  {0,-1,"","27","PASSWD"}, \
-				{0,-1,"","28","PASSWD"},  {0,-1,"","29","PASSWD"}, \
-				{0,-1,"","30","PASSWD"},  {0,-1,"","31","PASSWD"}, \
-				{0,-1,"","HM_CON","PASSWD"}};*/
-		CLIENT_INFO* client_info;
-		client_info = (CLIENT_INFO *)calloc(sizeof(CLIENT_INFO), count);
-		if (client_info == NULL) {
-			perror("calloc()");
-			exit(2);
-		}
-		char id[ID_SIZE];
-		char pw[ID_SIZE];
-
-		for (int i = 0; i < count; i++){
-			client_info[i].index = 0;
-			client_info[i].fd = -1;
-			strcpy(client_info[i].ip, "");
-			fscanf(fp, "%s", id);
-			strcpy(client_info[i].id, id);
-			fscanf(fp, "%s", pw);
-			strcpy(client_info[i].pw, pw);
-			//printf("%s %s\n", client_info[i].id, client_info[i].pw);
-		}
-
-
-		if(argc != 2) {
-				printf("Usage : %s <port>\n",argv[0]);
-				exit(1);
-		}
-		fputs("IoT Server Start!!\n",stdout);
-
-		if(pthread_mutex_init(&mutx, NULL))
-				error_handling("mutex init error");
-
-		serv_sock = socket(PF_INET, SOCK_STREAM, 0);
-
-		memset(&serv_adr, 0, sizeof(serv_adr));
-		serv_adr.sin_family=AF_INET;
-		serv_adr.sin_addr.s_addr=htonl(INADDR_ANY);
-		serv_adr.sin_port=htons(atoi(argv[1]));
-
-		setsockopt(serv_sock, SOL_SOCKET, SO_REUSEADDR, (void*)&sock_option, sizeof(sock_option));
-		if(bind(serv_sock, (struct sockaddr *)&serv_adr, sizeof(serv_adr))==-1)
-				error_handling("bind() error");
-
-		if(listen(serv_sock, 5) == -1)
-				error_handling("listen() error");
-
-		while(1) {
-				clnt_adr_sz = sizeof(clnt_adr);
-				clnt_sock = accept(serv_sock, (struct sockaddr *)&clnt_adr, &clnt_adr_sz);
-				if(clnt_cnt >= count)
-				{
-						printf("socket full\n");
-						shutdown(clnt_sock,SHUT_WR);
-						continue;
-				}
-				else if(clnt_sock < 0)
-				{
-						perror("accept()");
-						continue;
-				}
-
-				str_len = read(clnt_sock, idpasswd, sizeof(idpasswd));
-				idpasswd[str_len] = '\0';
-
-				if(str_len > 0)
-				{
-						i=0;
-						pToken = strtok(idpasswd,"[:]");
-
-						while(pToken != NULL)
-						{
-								pArray[i] =  pToken;
-								if(i++ >= ARR_CNT)
-										break;	
-								pToken = strtok(NULL,"[:]");
-						}
-						for(i=0;i<count;i++)
-						{
-								if(!strcmp(client_info[i].id,pArray[0]))
-								{
-										if(client_info[i].fd != -1)
-										{
-												sprintf(msg,"[%s] Already logged!\n",pArray[0]);
-												write(clnt_sock, msg,strlen(msg));
-												log_file(msg);
-												shutdown(clnt_sock,SHUT_WR);
-#if 1   //for MCU
-												client_info[i].fd = -1;
-#endif  
-												break;
-										}
-										if(!strcmp(client_info[i].pw,pArray[1])) 
-										{
-
-												strcpy(client_info[i].ip,inet_ntoa(clnt_adr.sin_addr));
-												pthread_mutex_lock(&mutx);
-												client_info[i].index = i; 
-												client_info[i].fd = clnt_sock; 
-												clnt_cnt++;
-												pthread_mutex_unlock(&mutx);
-												sprintf(msg,"[%s] New connected! (ip:%s,fd:%d,sockcnt:%d)\n",pArray[0],inet_ntoa(clnt_adr.sin_addr),clnt_sock,clnt_cnt);
-												log_file(msg);
-												write(clnt_sock, msg,strlen(msg));
-
-												pthread_create(t_id+i, NULL, clnt_connection, (void *)(client_info + i));
-												pthread_detach(t_id[i]);
-												break;
-										}
-								}
-						}
-						if(i == count)
-						{
-								sprintf(msg,"[%s] Authentication Error!\n",pArray[0]);
-								write(clnt_sock, msg,strlen(msg));
-								log_file(msg);
-								shutdown(clnt_sock,SHUT_WR);
-						}
-				}
-				else 
-						shutdown(clnt_sock,SHUT_WR);
-
-		}
-		free(client_info);
-		fclose(fp);
-
-		return 0;
+int db_login_check(const char *id, const char *pw) {
+    char query[256];
+    MYSQL_RES *res;
+    sprintf(query, "SELECT * FROM users WHERE id='%s' AND pw='%s'", id, pw);
+    if (mysql_query(conn, query)) return 0;
+    res = mysql_store_result(conn);
+    int result = mysql_num_rows(res) > 0;
+    mysql_free_result(res);
+    return result;
 }
 
-void * clnt_connection(void *arg)
-{
-		CLIENT_INFO * client_info = (CLIENT_INFO *)arg;
-		int str_len = 0;
-		int index = client_info->index;
-		char msg[BUF_SIZE];
-		char to_msg[MAX_CLNT*ID_SIZE+1];
-		int i=0;
-		char *pToken;
-		char *pArray[ARR_CNT]={0};
-		char strBuff[BUF_SIZE*2]={0};
+int main(int argc, char *argv[]) {
+    int serv_sock, clnt_sock;
+    struct sockaddr_in serv_adr, clnt_adr;
+    int clnt_adr_sz;
+    int sock_option = 1;
+    pthread_t t_id;
+    char idpasswd[(ID_SIZE*2)+3];
+    char *pToken, *pArray[ARR_CNT] = {0};
 
-		MSG_INFO msg_info;
-		CLIENT_INFO  * first_client_info;
+    if(argc != 2) {
+        printf("Usage : %s <port>\n",argv[0]);
+        exit(1);
+    }
 
-		first_client_info = (CLIENT_INFO *)((void *)client_info - (void *)( sizeof(CLIENT_INFO) * index ));
-		while(1)
-		{
-				memset(msg,0x0,sizeof(msg));
-				str_len = read(client_info->fd, msg, sizeof(msg)-1); 
-				if(str_len <= 0)
-						break;
+    // DB 연결
+    conn = mysql_init(NULL);
+    if (!mysql_real_connect(conn, "localhost", "iot", "pwiot", "userdb", 0, NULL, 0)) {
+        fprintf(stderr, "DB 연결 실패: %s\n", mysql_error(conn));
+        exit(1);
+    }
 
-				msg[str_len] = '\0';
-				pToken = strtok(msg,"[:]");
-				i = 0; 
-				while(pToken != NULL)
-				{
-						pArray[i] =  pToken;
-						if(i++ >= ARR_CNT)
-								break;	
-						pToken = strtok(NULL,"[:]");
-				}
+    if(pthread_mutex_init(&mutx, NULL))
+        error_handling("mutex init error");
 
-				msg_info.fd = client_info->fd;
-				msg_info.from = client_info->id;
-				msg_info.to = pArray[0];
-				sprintf(to_msg,"[%s]%s",msg_info.from,pArray[1]);
-				msg_info.msg = to_msg;
-				msg_info.len = strlen(to_msg);
+    serv_sock = socket(PF_INET, SOCK_STREAM, 0);
+    setsockopt(serv_sock, SOL_SOCKET, SO_REUSEADDR, (void*)&sock_option, sizeof(sock_option));
 
-				sprintf(strBuff,"msg : [%s->%s] %s",msg_info.from,msg_info.to,pArray[1]);
-				log_file(strBuff);
-				send_msg(&msg_info, first_client_info);
-		}
+    memset(&serv_adr, 0, sizeof(serv_adr));
+    serv_adr.sin_family = AF_INET;
+    serv_adr.sin_addr.s_addr = htonl(INADDR_ANY);
+    serv_adr.sin_port = htons(atoi(argv[1]));
 
-		close(client_info->fd);
+    if(bind(serv_sock, (struct sockaddr*)&serv_adr, sizeof(serv_adr))==-1)
+        error_handling("bind() error");
 
-		sprintf(strBuff,"Disconnect ID:%s (ip:%s,fd:%d,sockcnt:%d)\n",client_info->id,client_info->ip,client_info->fd,clnt_cnt-1);
-		log_file(strBuff);
+    if(listen(serv_sock, 5)==-1)
+        error_handling("listen() error");
 
-		pthread_mutex_lock(&mutx);
-		clnt_cnt--;
-		client_info->fd = -1;
-		pthread_mutex_unlock(&mutx);
+    fputs("IoT Server Start!!\n", stdout);
 
-		return 0;
+    while(1) {
+        clnt_adr_sz = sizeof(clnt_adr);
+        clnt_sock = accept(serv_sock, (struct sockaddr*)&clnt_adr, &clnt_adr_sz);
+        if(clnt_sock < 0) continue;
+
+        int str_len = read(clnt_sock, idpasswd, sizeof(idpasswd));
+        idpasswd[str_len] = '\0';
+
+        int i = 0;
+        pToken = strtok(idpasswd, ":");
+        while(pToken != NULL) {
+            pArray[i++] = pToken;
+            if (i >= ARR_CNT) break;
+            pToken = strtok(NULL, ":");
+        }
+
+        if (db_login_check(pArray[0], pArray[1])) {
+            pthread_mutex_lock(&mutx);
+            int idx;
+            for (idx = 0; idx < MAX_CLNT; idx++) {
+                if (client_info[idx].fd == 0) break;
+            }
+            if (idx == MAX_CLNT) {
+                write(clnt_sock, "[SERVER] Server full\n", 22);
+                close(clnt_sock);
+                pthread_mutex_unlock(&mutx);
+                continue;
+            }
+
+            client_info[idx].fd = clnt_sock;
+            strcpy(client_info[idx].ip, inet_ntoa(clnt_adr.sin_addr));
+            strcpy(client_info[idx].id, pArray[0]);
+            clnt_cnt++;
+            pthread_mutex_unlock(&mutx);
+
+            char welcome[BUF_SIZE];
+            sprintf(welcome, "[%s] New connected! (ip:%s,fd:%d,sockcnt:%d)\n",
+                    pArray[0], client_info[idx].ip, clnt_sock, clnt_cnt);
+            log_file(welcome);
+            write(clnt_sock, welcome, strlen(welcome));
+            pthread_create(&t_id, NULL, clnt_connection, (void*)&client_info[idx]);
+            pthread_detach(t_id);
+        } else {
+            write(clnt_sock, "[SERVER] Authentication Error!\n", 33);
+            close(clnt_sock);
+        }
+    }
+    close(serv_sock);
+    mysql_close(conn);
+    return 0;
 }
 
-void send_msg(MSG_INFO * msg_info, CLIENT_INFO * first_client_info)
-{
-		int i=0;
+void * clnt_connection(void * arg) {
+    CLIENT_INFO * cli = (CLIENT_INFO *)arg;
+    char msg[BUF_SIZE];
+    int str_len;
 
-		if(!strcmp(msg_info->to,"ALLMSG"))
-		{
-				for(i=0;i<MAX_CLNT;i++)
-						if((first_client_info+i)->fd != -1)	
-								write((first_client_info+i)->fd, msg_info->msg, msg_info->len);
-		}
-		else if(!strcmp(msg_info->to,"IDLIST"))
-		{
-				char* idlist = (char *)malloc(ID_SIZE * MAX_CLNT);
-				msg_info->msg[strlen(msg_info->msg) - 1] = '\0';
-				strcpy(idlist,msg_info->msg);
+    while ((str_len = read(cli->fd, msg, sizeof(msg) - 1)) > 0) {
+        msg[str_len] = 0;
 
-				for(i=0;i<MAX_CLNT;i++)
-				{
-						if((first_client_info+i)->fd != -1)	
-						{
-								strcat(idlist,(first_client_info+i)->id);
-								strcat(idlist," ");
-						}
-				}
-				strcat(idlist,"\n");
-				write(msg_info->fd, idlist, strlen(idlist));
-				free(idlist);
-		}
-		else
-				for(i=0;i<MAX_CLNT;i++)
-						if((first_client_info+i)->fd != -1)	
-								if(!strcmp(msg_info->to,(first_client_info+i)->id))
-										write((first_client_info+i)->fd, msg_info->msg, msg_info->len);
+        char *pToken, *pArray[ARR_CNT] = {0};
+        int i = 0;
+        pToken = strtok(msg, "[:]");  // ex) [SIGNUP]id@pw
+        while (pToken != NULL && i < ARR_CNT) {
+            pArray[i++] = pToken;
+            pToken = strtok(NULL, "[:]");
+        }
+
+        if (i >= 2) {
+            //  줄바꿈 제거
+            pArray[1][strcspn(pArray[1], "\r\n")] = 0;
+
+            // [SIGNUP]id@pw (MASTER만)
+            if (!strcmp(pArray[0], "SIGNUP")) {
+                if (strcmp(cli->id, "MASTER") != 0) {
+                    write(cli->fd, "[SERVER] Signup failed or unauthorized.\n", 41);
+                    continue;
+                }
+
+                char *newid = strtok(pArray[1], "@");
+                char *newpw = strtok(NULL, "@");
+
+                if (newid && newpw) {
+                    char query[256];
+                    sprintf(query, "INSERT INTO users (id, pw) VALUES ('%s', '%s')", newid, newpw);
+
+                    if (mysql_query(conn, query) == 0) {
+                        write(cli->fd, "[SERVER] Account created.\n", 28);
+                    } else {
+                        write(cli->fd, "[SERVER] Signup failed (maybe duplicate ID).\n", 46);
+                    }
+                } else {
+                    write(cli->fd, "[SERVER] Invalid SIGNUP format. Use id@pw\n", 43);
+                }
+                continue;
+            }
+
+            // [CHPASS]id@newpw (본인 or MASTER)
+            if (!strcmp(pArray[0], "CHPASS")) {
+                char *target_id = strtok(pArray[1], "@");
+                char *newpw = strtok(NULL, "@");
+
+                if (!target_id || !newpw) {
+                    write(cli->fd, "[SERVER] Invalid CHPASS format. Use id@newpw\n", 47);
+                    continue;
+                }
+
+                if (strcmp(cli->id, "MASTER") != 0 && strcmp(cli->id, target_id) != 0) {
+                    write(cli->fd, "[SERVER] Unauthorized to change this password.\n", 49);
+                    continue;
+                }
+
+                char query[256];
+                sprintf(query, "UPDATE users SET pw='%s' WHERE id='%s'", newpw, target_id);
+
+                if (mysql_query(conn, query) == 0 && mysql_affected_rows(conn) > 0) {
+                    write(cli->fd, "[SERVER] Password changed.\n", 29);
+                } else {
+                    write(cli->fd, "[SERVER] Password change failed.\n", 36);
+                }
+                continue;
+            }
+
+            // [DELETE]id@pw (본인 or MASTER, 강제 로그아웃 포함)
+            if (!strcmp(pArray[0], "DELETE")) {
+                char *target_id = strtok(pArray[1], "@");
+                char *pw = strtok(NULL, "@");
+
+                if (!target_id || !pw) {
+                    write(cli->fd, "[SERVER] Invalid DELETE format. Use id@pw\n", 43);
+                    continue;
+                }
+
+                if (strcmp(cli->id, "MASTER") != 0 && strcmp(cli->id, target_id) != 0) {
+                    write(cli->fd, "[SERVER] Delete failed or unauthorized.\n", 43);
+                    continue;
+                }
+
+                char query[256];
+                MYSQL_RES *res;
+                sprintf(query, "SELECT * FROM users WHERE id='%s' AND pw='%s'", target_id, pw);
+                if (mysql_query(conn, query) != 0) {
+                    write(cli->fd, "[SERVER] DB error.\n", 20);
+                    continue;
+                }
+
+                res = mysql_store_result(conn);
+                if (mysql_num_rows(res) == 0) {
+                    write(cli->fd, "[SERVER] ID or password incorrect.\n", 36);
+                    mysql_free_result(res);
+                    continue;
+                }
+                mysql_free_result(res);
+
+                // 삭제 수행
+                sprintf(query, "DELETE FROM users WHERE id='%s'", target_id);
+                if (mysql_query(conn, query) == 0 && mysql_affected_rows(conn) > 0) {
+                    write(cli->fd, "[SERVER] Account deleted.\n", 27);
+
+                    // 강제 로그아웃
+                    pthread_mutex_lock(&mutx);
+                    for (int k = 0; k < MAX_CLNT; k++) {
+                        if (client_info[k].fd != 0 && strcmp(client_info[k].id, target_id) == 0) {
+                            write(client_info[k].fd, "[SERVER] You have been deleted.\n", 34);
+                            close(client_info[k].fd);
+                            client_info[k].fd = 0;
+                            clnt_cnt--;
+                            break;
+                        }
+                    }
+                    pthread_mutex_unlock(&mutx);
+                } else {
+                    write(cli->fd, "[SERVER] Delete failed.\n", 28);
+                }
+                continue;
+            }
+
+            // 일반 메시지 처리 (채팅)
+            MSG_INFO info;
+            info.fd = cli->fd;
+            info.from = cli->id;
+            info.to = pArray[0];
+
+            char *fullmsg = malloc(BUF_SIZE);
+            snprintf(fullmsg, BUF_SIZE, "[%s]%s\n", info.from, pArray[1]);
+            info.msg = fullmsg;
+            info.len = strlen(fullmsg);
+
+            printf("msg : [%s->%s] %s\n", info.from, info.to, pArray[1]);
+
+            send_msg(&info);
+            free(fullmsg);
+        }
+    }
+
+    //연결 종료
+    close(cli->fd);
+    pthread_mutex_lock(&mutx);
+    cli->fd = 0;
+    clnt_cnt--;
+    pthread_mutex_unlock(&mutx);
+
+    return NULL;
 }
 
-void error_handling(char *msg)
-{
-		fputs(msg, stderr);
-		fputc('\n', stderr);
-		exit(1);
+void send_msg(MSG_INFO * msg_info) {
+    pthread_mutex_lock(&mutx);
+    for (int i = 0; i < MAX_CLNT; i++) {
+        if (client_info[i].fd == 0) continue;
+
+        // 전체 전송
+        if (!strcmp(msg_info->to, "ALLMSG")) {
+            write(client_info[i].fd, msg_info->msg, msg_info->len);
+        }
+        // 귓속말
+        else if (!strcmp(msg_info->to, client_info[i].id)) {
+            write(client_info[i].fd, msg_info->msg, msg_info->len);
+        }
+    }
+    pthread_mutex_unlock(&mutx);
 }
 
-void log_file(char * msgstr)
-{
-		fputs(msgstr,stdout);
+void error_handling(char * msg) {
+    fputs(msg, stderr);
+    fputc('\n', stderr);
+    exit(1);
+}
+
+void log_file(char * msgstr) {
+    fputs(msgstr, stdout);
 }
