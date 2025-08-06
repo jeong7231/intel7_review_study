@@ -3,6 +3,7 @@
 ## 주차별 과제
 
 [1주차](1st_week/1st_week.md)
+[2주차](2nd_week/2nd_week.md)
 
 ## 규칙
 1. 소스코드 파일 명 끝에 본인 이니셜 작성 ex) `xxx_jty.c`
