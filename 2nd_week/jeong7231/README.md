@@ -27,7 +27,7 @@ Timer/Counter, PWM, Interrupt, ADC를 활용하여 신호등을 구현함.
 
 ## 타이머/카운터 설정 (TIM2, TIM3)
 
-### 1.1 TIM2 (Timer/Counter, 10ms 주기 인터럽트)
+### 1. TIM2 (Timer/Counter, 10ms 주기 인터럽트)
 
 * **모드:** Output Compare No Output (채널1만 사용, 나머지 채널 Disable)
 * **Prescaler (PSC):** 8399
@@ -42,7 +42,7 @@ Timer/Counter, PWM, Interrupt, ADC를 활용하여 신호등을 구현함.
   * 84MHz / (8399+1) = 10kHz → 10kHz / (99+1) = 100Hz → **10ms 주기**
   * 10ms마다 인터럽트 발생, 신호등 FSM state\_tick 증가 등에 사용
 
-### 1.2 TIM3 (PWM 제어)
+### 2. TIM3 (PWM 제어)
 
 * **모드:** PWM Generation CH1, CH2, CH3 (각 채널별 PWM, CH4 미사용)
 * **Prescaler (PSC):** 83
@@ -63,7 +63,7 @@ Timer/Counter, PWM, Interrupt, ADC를 활용하여 신호등을 구현함.
   * 각 채널별로 LED 밝기 조절에 사용
 
 
-## 2. **ADC 설정 (ADC1)**
+## ADC 설정 (ADC1)
 
 * **채널:** IN1 (ADC1\_CH1)
 * **Clock Prescaler:** PCLK2 divided by 4
@@ -79,7 +79,7 @@ Timer/Counter, PWM, Interrupt, ADC를 활용하여 신호등을 구현함.
   * 단일 변환 완료 시 인터럽트 발생, ADC 결과값으로 PWM 듀티 조정
 
 
-## 3. **GPIO/EXTI 인터럽트 설정**
+## GPIO/EXTI 인터럽트 설정
 
 * **EXTI Line1, Line2 Interrupt Enable:** 활성화됨
 * **설정:**
@@ -92,7 +92,7 @@ Timer/Counter, PWM, Interrupt, ADC를 활용하여 신호등을 구현함.
   * HAL\_GPIO\_EXTI\_Callback에서 btn\_1\_flag, btn\_2\_flag 세트
 
 
-## 4. **NVIC 설정**
+## NVIC 설정
 
 * **활성화된 인터럽트:**
 
