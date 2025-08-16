@@ -22,9 +22,6 @@ Timer/Counter, PWM, Interrupt, ADC를 활용하여 신호등을 구현함.
   * 각 버튼 입력 시, 지정된 신호등 상태로 즉시 변경됨.
 
 
-아래는 첨부한 CubeMX 설정 캡처를 바탕으로 **신호등 프로젝트의 타이머(PWM, T/C), ADC, 인터럽트 설정**을 건조체로 정리한 내용입니다.
-
-
 ## 타이머/카운터 설정 (TIM2, TIM3)
 
 ### 1. TIM2 (Timer/Counter, 10ms 주기 인터럽트)
