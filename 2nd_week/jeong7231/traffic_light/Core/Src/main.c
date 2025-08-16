@@ -55,7 +55,7 @@ UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
 // ADC, PWM
-volatile uint8_t  adc_flag = 0;
+volatile uint8_t adc_flag = 0;
 volatile uint32_t adc_value = 0;
 volatile uint32_t pwm_duty = 0;
 
@@ -63,17 +63,14 @@ volatile uint32_t pwm_duty = 0;
 volatile uint32_t state_tick = 0;
 
 typedef enum {
-    STATE_GREEN = 0,
-    STATE_YELLOW,
-    STATE_RED
+	STATE_GREEN = 0, STATE_YELLOW, STATE_RED
 } TrafficState_t;
 
 volatile TrafficState_t state = STATE_GREEN;
 
 // 버튼 플래그
-volatile uint8_t  btn_1_flag = 0;
-volatile uint8_t  btn_2_flag = 0;
-
+volatile uint8_t btn_1_flag = 0;
+volatile uint8_t btn_2_flag = 0;
 
 /* USER CODE END PV */
 
@@ -126,20 +123,24 @@ int main(void) {
 	MX_TIM3_Init();
 	MX_ADC1_Init();
 	/* USER CODE BEGIN 2 */
-	HAL_TIM_Base_Start_IT(&htim2); // TIM2 CH1 10ms 타이머 시작
+	if (HAL_TIM_Base_Start_IT(&htim2) != HAL_OK)
+		Error_Handler();
+
 	if (HAL_ADC_Start_IT(&hadc1) != HAL_OK)
 		Error_Handler();
 
-	HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1); // LED1 RED
-	HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_2); // LED2 YELLOW
-	HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_3); // LED3 GREEN
+	if (HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1) != HAL_OK)
+		Error_Handler();
+	if (HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_2) != HAL_OK)
+		Error_Handler();
+	if (HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_3) != HAL_OK)
+		Error_Handler();
 
 	__HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, 0);   // LED1 OFF
 	__HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, 0);   // LED2 OFF
 	__HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_3, 0);   // LED3 OFF
 
 	printf("System Start!!\r\n");
-
 
 	/* USER CODE END 2 */
 
@@ -150,56 +151,58 @@ int main(void) {
 		if (adc_flag) {
 			adc_flag = 0;
 			pwm_duty = (adc_value * 999) / 4095;
-			HAL_ADC_Start_IT(&hadc1);
+
+			if (HAL_ADC_Start_IT(&hadc1) != HAL_OK)
+				Error_Handler();
 
 		}
 
 		switch (state) {
-		    case STATE_GREEN: // Green: 10초
-		        __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_3, pwm_duty);
-		        __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, 0);
-		        __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, 0);
+		case STATE_GREEN: // Green: 10초
+			__HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_3, pwm_duty);
+			__HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, 0);
+			__HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, 0);
 
-		        if (state_tick >= 1000) {
-		            state_tick = 0;
-		            state = STATE_YELLOW;
-		        }
-		        break;
+			if (state_tick >= 1000) {
+				state_tick = 0;
+				state = STATE_YELLOW;
+			}
+			break;
 
-		    case STATE_YELLOW: // Yellow: 3초
-		        __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, 0);
-		        __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_3, 0);
-		        __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, pwm_duty);
+		case STATE_YELLOW: // Yellow: 3초
+			__HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, 0);
+			__HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_3, 0);
+			__HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, pwm_duty);
 
-		        if (state_tick >= 300) {
-		            state_tick = 0;
-		            __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, 0);
-		            state = STATE_RED;
-		        }
-		        break;
+			if (state_tick >= 300) {
+				state_tick = 0;
+				__HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, 0);
+				state = STATE_RED;
+			}
+			break;
 
-		    case STATE_RED: // Red: 10초
-		        __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, pwm_duty);
-		        __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_3, 0);
-		        __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, 0);
+		case STATE_RED: // Red: 10초
+			__HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, pwm_duty);
+			__HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_3, 0);
+			__HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, 0);
 
-		        if (state_tick >= 1000) {
-		            state_tick = 0;
-		            __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, 0);
-		            state = STATE_GREEN;
-		        }
-		        break;
+			if (state_tick >= 1000) {
+				state_tick = 0;
+				__HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, 0);
+				state = STATE_GREEN;
+			}
+			break;
 		}
 
 		if (btn_1_flag) {
-		    btn_1_flag = 0;
-		    state_tick = 0;
-		    state = STATE_GREEN;
+			btn_1_flag = 0;
+			state_tick = 0;
+			state = STATE_GREEN;
 		}
 		if (btn_2_flag) {
-		    btn_2_flag = 0;
-		    state_tick = 0;
-		    state = STATE_RED;
+			btn_2_flag = 0;
+			state_tick = 0;
+			state = STATE_RED;
 		}
 
 		/* USER CODE END WHILE */
@@ -526,8 +529,6 @@ void Error_Handler(void) {
 	/* User can add his own implementation to report the HAL error return state */
 	__disable_irq();
 	while (1) {
-		HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
-		HAL_Delay(200);
 	}
 	/* USER CODE END Error_Handler_Debug */
 }
