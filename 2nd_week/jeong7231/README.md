@@ -98,13 +98,3 @@ Timer/Counter, PWM, Interrupt, ADC를 활용하여 신호등을 구현함.
   * TIM2
   * TIM3
 
-
-## 요약 표
-
-| 기능        | 사용 모듈   | 주요 설정                   | 인터럽트       |
-| --------- | ------- | ----------------------- | ---------- |
-| FSM 타이머   | TIM2    | Output Compare, 10ms 주기 | Enable     |
-| PWM (LED) | TIM3    | PWM CH1\~3, 1kHz 주기     | Enable(선택) |
-| 아날로그 입력   | ADC1    | 채널1, 12bit, 단발 변환       | Enable     |
-| 버튼        | EXTI1,2 | 각 버튼별 EXTI 매핑           | Enable     |
-
