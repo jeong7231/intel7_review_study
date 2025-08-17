@@ -168,7 +168,7 @@ int main(void) {
 			}
 			break;
 
-		case 1: // Yellow: 3초 (0.5초 주기 깜빡)
+		case 1: // Yellow: 3초
 			__HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, 0);
 			__HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_3, 0);
 			__HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, pwm_duty);
