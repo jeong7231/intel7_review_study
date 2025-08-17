@@ -21,7 +21,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include <stdio.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -54,28 +54,30 @@ TIM_HandleTypeDef htim3;
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
-volatile int tim2_cnt = 0;
-volatile int timer_half = 0;
-volatile int timer_1sec = 0;
-volatile int timer_flag_half = 0;
-volatile int timer_flag_1s = 0;
-volatile int timer_flag_3s = 0;
-volatile int timer_flag_5s = 0;
-volatile int timer_flag_10s = 0;
+// 타이머 및 플래그 (카운터/상태값)
+volatile uint32_t tim2_cnt = 0;
+volatile uint32_t timer_half = 0;
+volatile uint32_t timer_1sec = 0;
+volatile uint8_t  timer_flag_half = 0;
+volatile uint8_t  timer_flag_1s = 0;
+volatile uint8_t  timer_flag_3s = 0;
+volatile uint8_t  timer_flag_5s = 0;
+volatile uint8_t  timer_flag_10s = 0;
 
-volatile uint8_t adc_flag = 0;
+// ADC, PWM
+volatile uint8_t  adc_flag = 0;
 volatile uint32_t adc_value = 0;
 volatile uint32_t pwm_duty = 0;
 
-static int yello_blink_flag = 0;
+// 상태 및 스텝
+volatile uint32_t step = 0;
+volatile uint32_t state_tick = 0;  // 현재 상태별 tick 카운터
+volatile uint8_t  state = 0;       // 0: green, 1: yellow, 2: red
 
-volatile int step = 0;
+// 버튼 플래그
+volatile uint8_t  btn_1_flag = 0;
+volatile uint8_t  btn_2_flag = 0;
 
-volatile int state_tick = 0;  // 현재 상태별 tick 카운터
-volatile int state = 0;       // 0: green, 1: yellow, 2: red
-
-volatile int btn_1_flag = 0;
-volatile int btn_2_flag = 0;
 
 /* USER CODE END PV */
 
@@ -159,26 +161,6 @@ int main(void) {
 			printf("1초\r\n");
 		}
 
-//		if (btn_1_flag) {
-//			printf("btn 1\r\n");
-//			btn_1_flag = 0;
-//		} else if (btn_2_flag) {
-//			printf("btn 2\r\n");
-//			btn_2_flag = 0;
-//		}
-
-//		if (timer_flag_half) {
-//			timer_flag_half = 0;
-//			yello_blink_flag = !yello_blink_flag;
-//
-//			if (yello_blink_flag) {
-//				__HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, pwm_duty);
-//				__HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, pwm_duty);
-//				__HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_3, pwm_duty);
-//			} else {
-//				__HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, 0);
-//			}
-//		}
 
 		switch (state) {
 		case 0: // Green: 10초
@@ -188,7 +170,6 @@ int main(void) {
 			if (state_tick >= 1000) { // 10ms * 1000 = 10초
 				state_tick = 0;
 				state = 1;
-				yello_blink_flag = 0; // 노란불 깜빡임 초기화
 			}
 			if (btn_1_flag) {
 				btn_1_flag = 0;
@@ -542,45 +523,15 @@ PUTCHAR_PROTOTYPE {
 }
 
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
-//	if (htim->Instance == TIM2) {
-//		tim2_cnt++;
-//		if (tim2_cnt == 50 || tim2_cnt == 100) // 0.5초 플래그 세트
-//				{
-//			timer_flag_half = 1;
-//		}
-//		if (tim2_cnt >= 100)  // 10ms * 100 = 1초
-//				{
-//			tim2_cnt = 0;
-//			timer_1sec++;
-//
-//			timer_flag_1s = 1;  // 1초 플래그 세트
-//
-//			if (timer_1sec % 3 == 0) // 3초 플래그 세트
-//					{
-//				timer_flag_3s = 1;
-//			}
-//
-//			if (timer_1sec % 5 == 0) // 5초 플래그 세트
-//					{
-//				timer_flag_5s = 1;
-//			}
-//
-//			if (timer_1sec % 10 == 0) // 10초 플래그 세트
-//					{
-//				timer_flag_10s = 1;
-//			}
-//		}
-//	}
 	if (htim->Instance == TIM2) {
-		state_tick++; // 상태별 tick 카운터만 증가
+		state_tick++;
 	}
 }
 
 void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc) {
 	if (hadc->Instance == ADC1) {
 		adc_value = HAL_ADC_GetValue(&hadc1);
-		adc_flag = 1; // "새 값 들어옴" 알림
-//		HAL_ADC_Start_IT(&hadc1); // 다음 변환 예약 (이건 OK)
+		adc_flag = 1;
 	}
 
 }
