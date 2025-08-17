@@ -60,9 +60,15 @@ volatile uint32_t adc_value = 0;
 volatile uint32_t pwm_duty = 0;
 
 // 상태 및 스텝
-volatile uint32_t step = 0;
-volatile uint32_t state_tick = 0;  // 현재 상태별 tick 카운터
-volatile uint8_t  state = 0;       // 0: green, 1: yellow, 2: red
+volatile uint32_t state_tick = 0;
+
+typedef enum {
+    STATE_GREEN = 0,
+    STATE_YELLOW,
+    STATE_RED
+} TrafficState_t;
+
+volatile TrafficState_t state = STATE_GREEN;
 
 // 버튼 플래그
 volatile uint8_t  btn_1_flag = 0;
@@ -133,6 +139,8 @@ int main(void) {
 	__HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_3, 0);   // LED3 OFF
 
 	printf("System Start!!\r\n");
+
+
 	/* USER CODE END 2 */
 
 	/* Infinite loop */
@@ -147,72 +155,51 @@ int main(void) {
 		}
 
 		switch (state) {
-		case 0: // Green: 10초
-			__HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_3, pwm_duty);
-			__HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, 0);
-			__HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, 0);
-			if (state_tick >= 1000) { // 10ms * 1000 = 10초
-				state_tick = 0;
-				state = 1;
-			}
-			if (btn_1_flag) {
-				btn_1_flag = 0;
-				state_tick = 0;
-				state = 0;
-				break;
-			} else if (btn_2_flag) {
-				btn_2_flag = 0;
-				state_tick = 0;
-				state = 2;
-				break;
-			}
-			break;
+		    case STATE_GREEN: // Green: 10초
+		        __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_3, pwm_duty);
+		        __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, 0);
+		        __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, 0);
 
-		case 1: // Yellow: 3초
-			__HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, 0);
-			__HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_3, 0);
-			__HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, pwm_duty);
-			if (state_tick >= 200) { // 10ms * 300 = 3초
-				state_tick = 0;
-				__HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, 0);
-				state = 2;
-			}
-			if (btn_1_flag) {
-				btn_1_flag = 0;
-				state_tick = 0;
-				state = 0;
-				break;
-			} else if (btn_2_flag) {
-				btn_2_flag = 0;
-				state_tick = 0;
-				state = 2;
-				break;
-			}
-			break;
+		        if (state_tick >= 1000) {
+		            state_tick = 0;
+		            state = STATE_YELLOW;
+		        }
+		        break;
 
-		case 2: // Red: 10초
-			__HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, pwm_duty);  // 빨간 ON
-			__HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_3, 0);
-			__HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, 0);
-			if (state_tick >= 1000) { // 10ms * 1000 = 10초
-				state_tick = 0;
-				__HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, 0);
-				state = 0;
-			}
-			if (btn_1_flag) {
-				btn_1_flag = 0;
-				state_tick = 0;
-				state = 0;
-				break;
-			}
+		    case STATE_YELLOW: // Yellow: 3초
+		        __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, 0);
+		        __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_3, 0);
+		        __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, pwm_duty);
 
-			else if (btn_2_flag) {
-				btn_2_flag = 0;
-				state_tick = 0;
-				state = 2;
-				break;
-			}
-			break;
+		        if (state_tick >= 300) {
+		            state_tick = 0;
+		            __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, 0);
+		            state = STATE_RED;
+		        }
+		        break;
+
+		    case STATE_RED: // Red: 10초
+		        __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, pwm_duty);
+		        __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_3, 0);
+		        __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, 0);
+
+		        if (state_tick >= 1000) {
+		            state_tick = 0;
+		            __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, 0);
+		            state = STATE_GREEN;
+		        }
+		        break;
+		}
+
+		if (btn_1_flag) {
+		    btn_1_flag = 0;
+		    state_tick = 0;
+		    state = STATE_GREEN;
+		}
+		if (btn_2_flag) {
+		    btn_2_flag = 0;
+		    state_tick = 0;
+		    state = STATE_RED;
 		}
 
 		/* USER CODE END WHILE */
@@ -521,9 +508,9 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc) {
 }
 
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
-	if (GPIO_Pin == GPIO_PIN_1) { // BTN_1 (PB1)
+	if (GPIO_Pin == GPIO_PIN_1) {
 		btn_1_flag = 1;
-	} else if (GPIO_Pin == GPIO_PIN_2) { // BTN_2 (PB2)
+	} else if (GPIO_Pin == GPIO_PIN_2) {
 		btn_2_flag = 1;
 	}
 }
