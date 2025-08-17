@@ -54,16 +54,6 @@ TIM_HandleTypeDef htim3;
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
-// 타이머 및 플래그 (카운터/상태값)
-volatile uint32_t tim2_cnt = 0;
-volatile uint32_t timer_half = 0;
-volatile uint32_t timer_1sec = 0;
-volatile uint8_t  timer_flag_half = 0;
-volatile uint8_t  timer_flag_1s = 0;
-volatile uint8_t  timer_flag_3s = 0;
-volatile uint8_t  timer_flag_5s = 0;
-volatile uint8_t  timer_flag_10s = 0;
-
 // ADC, PWM
 volatile uint8_t  adc_flag = 0;
 volatile uint32_t adc_value = 0;
@@ -155,12 +145,6 @@ int main(void) {
 			HAL_ADC_Start_IT(&hadc1);
 
 		}
-
-		if (timer_flag_1s) {
-			timer_flag_1s = 0;
-			printf("1초\r\n");
-		}
-
 
 		switch (state) {
 		case 0: // Green: 10초
